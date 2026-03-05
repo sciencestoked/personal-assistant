@@ -642,6 +642,7 @@ async def root():
                 // Show loading
                 isLoading = true;
                 const loadingId = addLoadingMessage();
+                startPolling(); // Start polling while waiting for response
 
                 try {
                     const response = await fetch('/api/ask', {
@@ -672,6 +673,8 @@ async def root():
                     addChatMessage('assistant', `❌ Error: ${error.message}`);
                 } finally {
                     isLoading = false;
+                    stopPolling(); // Stop polling after response
+                    await updateActionLog(); // One final update
                 }
             }
 
@@ -795,8 +798,21 @@ async def root():
             // Load action log on page load
             updateActionLog();
 
-            // Refresh action log every 3 seconds
-            setInterval(updateActionLog, 3000);
+            // Smart polling - only poll during active requests
+            let pollInterval = null;
+
+            function startPolling() {
+                if (!pollInterval) {
+                    pollInterval = setInterval(updateActionLog, 2000);
+                }
+            }
+
+            function stopPolling() {
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+                }
+            }
         </script>
     </body>
     </html>
