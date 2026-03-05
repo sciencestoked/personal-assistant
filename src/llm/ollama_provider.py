@@ -43,6 +43,21 @@ class OllamaProvider(BaseLLM):
             response.raise_for_status()
             result = response.json()
             return result.get("message", {}).get("content", "")
+        except httpx.TimeoutException:
+            raise Exception(
+                f"Ollama request timed out after {self.client.timeout.read}s. "
+                "The model might be too slow or overloaded. "
+                "Try: 1) Using a smaller model, 2) Increasing timeout, or 3) Switching to Groq."
+            )
+        except httpx.ConnectError:
+            raise Exception(
+                "Cannot connect to Ollama. Is it running? "
+                "Check with: ollama ps"
+            )
+        except httpx.HTTPStatusError as e:
+            raise Exception(
+                f"Ollama HTTP error {e.response.status_code}: {e.response.text}"
+            )
         except Exception as e:
             raise Exception(f"Ollama API error: {str(e)}")
 

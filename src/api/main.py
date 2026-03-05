@@ -954,7 +954,7 @@ async def ask_question(request: QuestionRequest):
         answer = await assistant.answer_question_agentic(
             question=request.question,
             include_context=request.include_context,
-            max_iterations=5
+            max_iterations=10  # Increased for complex queries like tutorials, research
         )
         return AnswerResponse(answer=answer)
     except Exception as e:

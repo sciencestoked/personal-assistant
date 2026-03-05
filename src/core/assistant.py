@@ -466,13 +466,74 @@ Provide:
                 self.agentic_logger.log_error(str(e), context=f"Iteration {iteration}")
                 raise
 
-        # Max iterations reached
+        # Max iterations reached - provide helpful fallback
         self.log_action("answer_question_agentic", "error", "Max iterations reached")
         self.agentic_logger.log_error(
             "Maximum iterations reached",
             context=f"Used all {max_iterations} tool calls without reaching final answer"
         )
-        return "I've reached the maximum number of tool calls. Please try breaking your request into smaller steps."
+
+        # Analyze what went wrong and provide helpful suggestions
+        question_lower = question.lower()
+        fallback_message = f"I used all {max_iterations} tool searches but couldn't find a complete answer. "
+
+        # Provide specific suggestions based on query type
+        if any(word in question_lower for word in ["guitar", "chord", "learn", "tutorial", "how to"]):
+            fallback_message += """
+
+Here's what I recommend:
+
+1. **Try these websites directly**:
+   - Ultimate Guitar: https://www.ultimate-guitar.com/
+   - Chordify: https://chordify.net/
+   - YouTube: Search for "[song name] guitar tutorial"
+
+2. **Search terms that work well**:
+   - "[song name] guitar chords"
+   - "[song name] tabs PDF"
+   - "[song name] guitar tutorial beginner"
+
+3. **Alternative approach**:
+   - Ask me to search for the official music video link
+   - Then use a chord detection tool like Chordify to analyze it
+
+Would you like me to try a more specific search, or would you prefer direct links to chord websites?"""
+
+        elif any(word in question_lower for word in ["weather", "temperature", "forecast"]):
+            fallback_message += """
+
+Try being more specific:
+- "What's the weather in [specific city]?"
+- "Current temperature in [city]"
+
+Or check directly: https://www.google.com/search?q=weather"""
+
+        elif any(word in question_lower for word in ["news", "latest", "recent"]):
+            fallback_message += """
+
+Try:
+- "Latest [specific topic] news"
+- "Recent news about [specific subject]"
+
+Or visit news sites directly:
+- Google News: https://news.google.com
+- Reddit: https://reddit.com/r/[topic]"""
+
+        else:
+            fallback_message += """
+
+**Tips to get better results**:
+1. Break your question into smaller parts
+2. Be more specific with search terms
+3. Try asking for just one piece of information at a time
+
+**Example**:
+Instead of: "Help me with X, Y, and Z"
+Try: "Help me with X" (then ask about Y separately)
+
+Would you like to rephrase your question or break it into smaller steps?"""
+
+        return fallback_message
 
     async def answer_question(self, question: str, include_context: bool = True) -> str:
         """
