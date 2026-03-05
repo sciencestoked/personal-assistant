@@ -343,6 +343,7 @@
             // Show loading indicator
             isLoading = true;
             const loadingId = addLoadingMessage();
+            startPolling(); // Start polling while waiting for response
 
             try {
                 // Send to API
@@ -374,6 +375,8 @@
                 addMessage('assistant', `❌ Error: ${error.message}`);
             } finally {
                 isLoading = false;
+                stopPolling(); // Stop polling after response
+                updateActionLog(); // One final update
             }
         }
 
@@ -497,8 +500,21 @@
         // Load action log on page load
         updateActionLog();
 
-        // Refresh action log every 5 seconds
-        setInterval(updateActionLog, 5000);
+        // Refresh action log only during active conversations (every 2 seconds when waiting for response)
+        let pollInterval = null;
+
+        function startPolling() {
+            if (!pollInterval) {
+                pollInterval = setInterval(updateActionLog, 2000);
+            }
+        }
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
     </script>
 </body>
 </html>
