@@ -38,14 +38,16 @@ class NotionIntegration:
             List of page dictionaries
         """
         try:
+            # The newer notion-client doesn't need filter for pages
             response = await self.client.search(
-                query=query,
-                page_size=page_size,
-                filter={"property": "object", "value": "page"}
+                query=query if query else "",
+                page_size=page_size
             )
             return self._format_pages(response.get("results", []))
         except Exception as e:
             print(f"Error searching Notion: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def get_database_entries(
@@ -95,14 +97,19 @@ class NotionIntegration:
             page = await self.client.pages.retrieve(page_id=page_id)
 
             # Get page blocks (content)
-            blocks = await self.client.blocks.children.list(block_id=page_id)
+            blocks = await self.client.blocks.children.list(block_id=page_id, page_size=100)
+
+            # Extract content recursively
+            content = await self._extract_block_content_recursive(blocks.get("results", []))
 
             return {
                 "metadata": self._format_page(page),
-                "content": self._extract_block_content(blocks.get("results", []))
+                "content": content
             }
         except Exception as e:
             print(f"Error getting page content: {e}")
+            import traceback
+            traceback.print_exc()
             return {"metadata": {}, "content": ""}
 
     async def get_recent_updates(
@@ -111,44 +118,45 @@ class NotionIntegration:
         database_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get recently updated pages from a database.
+        Get recently updated pages (searches all accessible pages, not just databases).
 
         Args:
             days: Number of days to look back
-            database_id: Database ID (uses default if not provided)
+            database_id: Not used anymore, kept for compatibility
 
         Returns:
             List of recently updated pages
         """
-        db_id = database_id or self.database_id
-        if not db_id:
-            raise ValueError("No database ID provided")
-
         try:
-            # Calculate date threshold
-            from datetime import timedelta
-            threshold = datetime.now() - timedelta(days=days)
-
-            # Query with last_edited_time filter
-            response = await self.client.databases.query(
-                database_id=db_id,
-                filter={
-                    "timestamp": "last_edited_time",
-                    "last_edited_time": {
-                        "after": threshold.isoformat()
-                    }
+            # Use search with sort by last_edited_time instead of database query
+            # This works for all pages, not just databases
+            response = await self.client.search(
+                query="",
+                sort={
+                    "direction": "descending",
+                    "timestamp": "last_edited_time"
                 },
-                sorts=[
-                    {
-                        "timestamp": "last_edited_time",
-                        "direction": "descending"
-                    }
-                ]
+                page_size=20
             )
-            return self._format_database_entries(response.get("results", []))
+
+            # Filter by date
+            from datetime import timedelta, timezone
+            threshold = datetime.now(timezone.utc) - timedelta(days=days)
+
+            results = response.get("results", [])
+            recent = []
+            for page in results:
+                last_edited = page.get("last_edited_time", "")
+                if last_edited:
+                    page_date = datetime.fromisoformat(last_edited.replace("Z", "+00:00"))
+                    if page_date >= threshold:
+                        recent.append(page)
+
+            return self._format_pages(recent)
         except Exception as e:
-            # If Notion database is not configured, return empty list
             print(f"Error getting recent updates: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _format_page(self, page: Dict[str, Any]) -> Dict[str, Any]:
@@ -212,27 +220,70 @@ class NotionIntegration:
         """Format multiple database entries"""
         return [self._format_database_entry(entry) for entry in entries]
 
-    def _extract_block_content(self, blocks: List[Dict[str, Any]]) -> str:
-        """Extract text content from blocks"""
+    async def _extract_block_content_recursive(self, blocks: List[Dict[str, Any]], indent: int = 0) -> str:
+        """Extract text content from blocks recursively"""
         content_parts = []
+        prefix = "  " * indent
 
         for block in blocks:
             block_type = block.get("type")
+            block_id = block.get("id")
+            has_children = block.get("has_children", False)
 
-            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item"]:
+            # Extract text based on block type
+            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3"]:
                 rich_text = block.get(block_type, {}).get("rich_text", [])
                 text = "".join([t.get("plain_text", "") for t in rich_text])
                 if text:
-                    content_parts.append(text)
+                    if block_type.startswith("heading"):
+                        content_parts.append(f"{prefix}## {text}")
+                    else:
+                        content_parts.append(f"{prefix}{text}")
+
+            elif block_type in ["bulleted_list_item", "numbered_list_item"]:
+                rich_text = block.get(block_type, {}).get("rich_text", [])
+                text = "".join([t.get("plain_text", "") for t in rich_text])
+                if text:
+                    bullet = "•" if block_type == "bulleted_list_item" else "1."
+                    content_parts.append(f"{prefix}{bullet} {text}")
+
+            elif block_type == "to_do":
+                rich_text = block.get("to_do", {}).get("rich_text", [])
+                checked = block.get("to_do", {}).get("checked", False)
+                text = "".join([t.get("plain_text", "") for t in rich_text])
+                if text:
+                    checkbox = "[x]" if checked else "[ ]"
+                    content_parts.append(f"{prefix}{checkbox} {text}")
+
             elif block_type == "code":
                 rich_text = block.get("code", {}).get("rich_text", [])
                 text = "".join([t.get("plain_text", "") for t in rich_text])
                 if text:
-                    content_parts.append(f"```\n{text}\n```")
+                    content_parts.append(f"{prefix}```\n{text}\n```")
+
             elif block_type == "quote":
                 rich_text = block.get("quote", {}).get("rich_text", [])
                 text = "".join([t.get("plain_text", "") for t in rich_text])
                 if text:
-                    content_parts.append(f"> {text}")
+                    content_parts.append(f"{prefix}> {text}")
 
-        return "\n\n".join(content_parts)
+            elif block_type == "divider":
+                content_parts.append(f"{prefix}---")
+
+            elif block_type == "table":
+                content_parts.append(f"{prefix}[Table with {block.get('table', {}).get('table_width', 0)} columns]")
+
+            # Recursively get children if they exist
+            if has_children and block_id:
+                try:
+                    children = await self.client.blocks.children.list(block_id=block_id)
+                    child_content = await self._extract_block_content_recursive(
+                        children.get("results", []),
+                        indent + 1
+                    )
+                    if child_content:
+                        content_parts.append(child_content)
+                except Exception as e:
+                    print(f"Error getting children for block {block_id}: {e}")
+
+        return "\n".join(content_parts)

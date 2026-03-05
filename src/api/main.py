@@ -3,13 +3,15 @@ FastAPI server for the personal assistant.
 Provides REST API and web interface.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 import os
+import uuid
 
 from ..core.config import get_settings
 from ..core.assistant import PersonalAssistant
@@ -24,10 +26,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global instances (will be initialized on startup)
 assistant: Optional[PersonalAssistant] = None
 context_builder: Optional[ContextBuilder] = None
 settings = get_settings()
+
+# Session management - stores assistant instances per session
+sessions = {}
 
 
 # Request/Response models
@@ -137,6 +151,24 @@ async def startup_event():
 
     except Exception as e:
         print(f"❌ Error during startup: {e}")
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_interface():
+    """Serve chat interface"""
+    import os
+    from pathlib import Path
+
+    # Get the project root directory
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent
+    chat_file = project_root / "ui" / "chat.html"
+
+    if not chat_file.exists():
+        raise HTTPException(status_code=404, detail=f"Chat interface not found at {chat_file}")
+
+    with open(chat_file, "r") as f:
+        return HTMLResponse(content=f.read())
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -309,25 +341,260 @@ async def root():
                 background-color: rgba(248, 81, 73, 0.1);
                 border-left-color: var(--error);
             }
+
+            .chat-container {
+                display: flex;
+                gap: 20px;
+                margin: 20px 0;
+            }
+
+            .main-section {
+                flex: 2;
+            }
+
+            .sidebar-section {
+                flex: 1;
+            }
+
+            .chat-window {
+                background-color: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                height: 500px;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .chat-message {
+                display: flex;
+                gap: 12px;
+                max-width: 85%;
+                animation: fadeIn 0.3s ease;
+            }
+
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
+            .chat-message.user {
+                align-self: flex-end;
+                flex-direction: row-reverse;
+            }
+
+            .chat-message.assistant {
+                align-self: flex-start;
+            }
+
+            .message-avatar {
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 16px;
+                flex-shrink: 0;
+            }
+
+            .chat-message.user .message-avatar {
+                background-color: var(--accent-primary);
+            }
+
+            .chat-message.assistant .message-avatar {
+                background-color: var(--success);
+            }
+
+            .message-content {
+                background-color: var(--bg-secondary);
+                padding: 10px 14px;
+                border-radius: 12px;
+                border: 1px solid var(--border-color);
+                white-space: pre-wrap;
+                line-height: 1.5;
+                font-size: 14px;
+            }
+
+            .chat-message.user .message-content {
+                background-color: var(--accent-primary);
+                color: white;
+                border: none;
+            }
+
+            .chat-input-area {
+                padding: 15px;
+                background-color: var(--bg-secondary);
+                border-top: 1px solid var(--border-color);
+            }
+
+            .chat-input-container {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+
+            #chatInput {
+                flex: 1;
+                background-color: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 10px 14px;
+                color: var(--text-primary);
+                font-size: 14px;
+                font-family: inherit;
+                resize: none;
+                min-height: 42px;
+                max-height: 150px;
+            }
+
+            #chatInput:focus {
+                outline: none;
+                border-color: var(--accent-primary);
+                box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+            }
+
+            .action-log {
+                background-color: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 15px;
+                max-height: 500px;
+                overflow-y: auto;
+            }
+
+            .action-item {
+                background-color: var(--bg-secondary);
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+                padding: 10px;
+                margin-bottom: 10px;
+                font-size: 12px;
+            }
+
+            .action-item .timestamp {
+                color: var(--text-secondary);
+                font-size: 11px;
+                margin-top: 5px;
+            }
+
+            .action-item .status {
+                display: inline-block;
+                margin-right: 5px;
+            }
+
+            .action-item.success .status { color: var(--success); }
+            .action-item.error .status { color: var(--error); }
+            .action-item.in_progress .status { color: var(--warning); }
+
+            .loading-dots {
+                display: flex;
+                gap: 5px;
+                padding: 10px;
+            }
+
+            .loading-dot {
+                width: 8px;
+                height: 8px;
+                background-color: var(--text-secondary);
+                border-radius: 50%;
+                animation: pulse 1.4s ease-in-out infinite;
+            }
+
+            .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+            .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+            @keyframes pulse {
+                0%, 80%, 100% { opacity: 0.4; }
+                40% { opacity: 1; }
+            }
+
+            .empty-chat {
+                text-align: center;
+                padding: 40px 20px;
+                color: var(--text-secondary);
+            }
+
+            .chat-messages::-webkit-scrollbar,
+            .action-log::-webkit-scrollbar {
+                width: 6px;
+            }
+
+            .chat-messages::-webkit-scrollbar-track,
+            .action-log::-webkit-scrollbar-track {
+                background: var(--bg-secondary);
+            }
+
+            .chat-messages::-webkit-scrollbar-thumb,
+            .action-log::-webkit-scrollbar-thumb {
+                background: var(--border-color);
+                border-radius: 3px;
+            }
+
+            .button-group {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin-bottom: 10px;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🤖 Personal Assistant</h1>
-            <p>Welcome to your intelligent personal assistant! Use the buttons below to interact.</p>
+            <p>Welcome to your intelligent personal assistant!</p>
 
             <h2>Quick Actions</h2>
-            <button class="button" onclick="getDailyBriefing()">📅 Daily Briefing</button>
-            <button class="button" onclick="getEveningSummary()">🌙 Evening Summary</button>
-            <button class="button" onclick="getPriorities()">⭐ Task Priorities</button>
-            <button class="button" onclick="getNextAction()">➡️ Next Action</button>
+            <div class="button-group">
+                <button class="button" onclick="getDailyBriefing()">📅 Daily Briefing</button>
+                <button class="button" onclick="getEveningSummary()">🌙 Evening Summary</button>
+                <button class="button" onclick="getPriorities()">⭐ Task Priorities</button>
+                <button class="button" onclick="getNextAction()">➡️ Next Action</button>
+                <button class="button" onclick="clearChat()" style="background-color: var(--error);">🗑️ Clear Chat</button>
+            </div>
 
-            <h2>Ask a Question</h2>
-            <input type="text" id="question" placeholder="Ask me anything about your schedule, notes, or emails...">
-            <button class="button" onclick="askQuestion()">Ask</button>
+            <div class="chat-container">
+                <div class="main-section">
+                    <h2>💬 Chat</h2>
+                    <div class="chat-window">
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="empty-chat">
+                                <h3>👋 Start chatting!</h3>
+                                <p>Ask me anything about your schedule, notes, or emails</p>
+                            </div>
+                        </div>
+                        <div class="chat-input-area">
+                            <div class="chat-input-container">
+                                <textarea
+                                    id="chatInput"
+                                    placeholder="Type your message..."
+                                    rows="1"
+                                    onkeydown="handleChatKeyPress(event)"
+                                ></textarea>
+                                <button class="button" onclick="sendChatMessage()">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            <h2>Response</h2>
-            <div class="output" id="output">Results will appear here...</div>
+                <div class="sidebar-section">
+                    <h2>📊 Action Log</h2>
+                    <div class="action-log" id="actionLog">
+                        <div class="empty-chat">
+                            <p>No actions yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <h2>API Endpoints</h2>
             <div class="endpoint"><strong>GET</strong> /api/briefing - Daily briefing</div>
@@ -339,93 +606,197 @@ async def root():
         </div>
 
         <script>
-            async function handleRequest(fetchFn, loadingMsg = 'Loading...') {
-                const output = document.getElementById('output');
-                output.textContent = loadingMsg;
-                output.classList.remove('error');
+            let isLoading = false;
 
-                try {
-                    const result = await fetchFn();
-                    output.textContent = result;
-                } catch (error) {
-                    output.classList.add('error');
-                    output.textContent = `❌ Error: ${error.message}\n\nPlease check your configuration and make sure all required services are running.`;
-                }
-            }
-
+            // Quick action handlers - these add to chat
             async function getDailyBriefing() {
-                await handleRequest(async () => {
-                    const response = await fetch('/api/briefing');
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Failed to get daily briefing');
-                    }
-                    const data = await response.json();
-                    return data.briefing;
-                }, 'Generating your daily briefing...');
+                sendChatMessage('Give me my daily briefing');
             }
 
             async function getEveningSummary() {
-                await handleRequest(async () => {
-                    const response = await fetch('/api/evening-summary');
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Failed to get evening summary');
-                    }
-                    const data = await response.json();
-                    return data.summary;
-                }, 'Generating your evening summary...');
+                sendChatMessage('Give me my evening summary');
             }
 
             async function getPriorities() {
-                await handleRequest(async () => {
-                    const response = await fetch('/api/priorities');
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Failed to get priorities');
-                    }
-                    const data = await response.json();
-                    return data.priorities;
-                }, 'Analyzing your priorities...');
+                sendChatMessage('What should I prioritize?');
             }
 
             async function getNextAction() {
-                await handleRequest(async () => {
-                    const response = await fetch('/api/next-action');
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.detail || 'Failed to get next action');
-                    }
-                    const data = await response.json();
-                    return data.suggestion;
-                }, 'Finding your next best action...');
+                sendChatMessage('What should I do next?');
             }
 
-            async function askQuestion() {
-                const question = document.getElementById('question').value;
-                if (!question) {
-                    const output = document.getElementById('output');
-                    output.classList.add('error');
-                    output.textContent = '❌ Please enter a question';
-                    return;
+            // Chat functions
+            async function sendChatMessage(messageText) {
+                const input = document.getElementById('chatInput');
+                const message = messageText || input.value.trim();
+
+                if (!message || isLoading) return;
+
+                // Add user message
+                addChatMessage('user', message);
+                if (!messageText) {
+                    input.value = '';
+                    input.style.height = 'auto';
                 }
 
-                await handleRequest(async () => {
+                // Show loading
+                isLoading = true;
+                const loadingId = addLoadingMessage();
+
+                try {
                     const response = await fetch('/api/ask', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ question: question, include_context: true })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            question: message,
+                            include_context: true
+                        })
                     });
+
                     if (!response.ok) {
                         const error = await response.json();
-                        throw new Error(error.detail || 'Failed to get answer');
+                        throw new Error(error.detail || 'Failed to get response');
                     }
+
                     const data = await response.json();
-                    return data.answer;
-                }, 'Thinking...');
+
+                    // Remove loading and add response
+                    removeMessage(loadingId);
+                    addChatMessage('assistant', data.answer);
+
+                    // Update action log
+                    await updateActionLog();
+
+                } catch (error) {
+                    removeMessage(loadingId);
+                    addChatMessage('assistant', `❌ Error: ${error.message}`);
+                } finally {
+                    isLoading = false;
+                }
             }
+
+            function addChatMessage(role, content) {
+                const messages = document.getElementById('chatMessages');
+                const emptyState = messages.querySelector('.empty-chat');
+                if (emptyState) emptyState.remove();
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `chat-message ${role}`;
+                messageDiv.id = `msg-${Date.now()}`;
+
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar';
+                avatar.textContent = role === 'user' ? '👤' : '🤖';
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                contentDiv.textContent = content;
+
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(contentDiv);
+                messages.appendChild(messageDiv);
+
+                messages.scrollTop = messages.scrollHeight;
+                return messageDiv.id;
+            }
+
+            function addLoadingMessage() {
+                const messages = document.getElementById('chatMessages');
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'chat-message assistant';
+                const id = `loading-${Date.now()}`;
+                loadingDiv.id = id;
+
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar';
+                avatar.textContent = '🤖';
+
+                const loading = document.createElement('div');
+                loading.className = 'message-content loading-dots';
+                loading.innerHTML = '<div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>';
+
+                loadingDiv.appendChild(avatar);
+                loadingDiv.appendChild(loading);
+                messages.appendChild(loadingDiv);
+
+                messages.scrollTop = messages.scrollHeight;
+                return id;
+            }
+
+            function removeMessage(id) {
+                const msg = document.getElementById(id);
+                if (msg) msg.remove();
+            }
+
+            async function updateActionLog() {
+                try {
+                    const response = await fetch('/api/actions');
+                    const data = await response.json();
+
+                    const actionLog = document.getElementById('actionLog');
+                    actionLog.innerHTML = '';
+
+                    if (data.actions.length === 0) {
+                        actionLog.innerHTML = '<div class="empty-chat"><p>No actions yet</p></div>';
+                        return;
+                    }
+
+                    data.actions.reverse().forEach(action => {
+                        const item = document.createElement('div');
+                        item.className = `action-item ${action.status}`;
+
+                        const statusIcon = action.status === 'success' ? '✅' :
+                                         action.status === 'error' ? '❌' : '⏳';
+
+                        item.innerHTML = `
+                            <div class="status">${statusIcon}</div>
+                            <strong>${action.action}</strong>
+                            <div>${action.details}</div>
+                            <div class="timestamp">${new Date(action.timestamp).toLocaleTimeString()}</div>
+                        `;
+
+                        actionLog.appendChild(item);
+                    });
+                } catch (error) {
+                    console.error('Failed to update action log:', error);
+                }
+            }
+
+            async function clearChat() {
+                if (!confirm('Clear chat history?')) return;
+
+                try {
+                    await fetch('/api/session/reset', { method: 'POST' });
+                    document.getElementById('chatMessages').innerHTML = `
+                        <div class="empty-chat">
+                            <h3>👋 Start chatting!</h3>
+                            <p>Ask me anything about your schedule, notes, or emails</p>
+                        </div>
+                    `;
+                    document.getElementById('actionLog').innerHTML = '<div class="empty-chat"><p>No actions yet</p></div>';
+                } catch (error) {
+                    alert('Failed to clear chat');
+                }
+            }
+
+            function handleChatKeyPress(event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendChatMessage();
+                }
+            }
+
+            // Auto-resize textarea
+            document.getElementById('chatInput').addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+            });
+
+            // Load action log on page load
+            updateActionLog();
+
+            // Refresh action log every 3 seconds
+            setInterval(updateActionLog, 3000);
         </script>
     </body>
     </html>
@@ -534,13 +905,53 @@ async def ask_question(request: QuestionRequest):
         )
 
     try:
-        answer = await assistant.answer_question(
+        # Use agentic version that can call tools
+        answer = await assistant.answer_question_agentic(
             question=request.question,
-            include_context=request.include_context
+            include_context=request.include_context,
+            max_iterations=5
         )
         return AnswerResponse(answer=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error answering question: {str(e)}")
+
+
+@app.post("/api/session/reset")
+async def reset_session():
+    """Reset conversation history"""
+    if not assistant:
+        raise HTTPException(status_code=503, detail="Assistant not initialized")
+
+    assistant.clear_conversation_history()
+    return {"status": "success", "message": "Conversation history cleared"}
+
+
+@app.get("/api/session/history")
+async def get_conversation_history():
+    """Get conversation history"""
+    if not assistant:
+        raise HTTPException(status_code=503, detail="Assistant not initialized")
+
+    history = [
+        {
+            "role": msg.role,
+            "content": msg.content,
+        }
+        for msg in assistant.conversation_history
+        if msg.role != "system"  # Don't send system messages
+    ]
+
+    return {"history": history}
+
+
+@app.get("/api/actions")
+async def get_action_log():
+    """Get recent action logs"""
+    if not assistant:
+        raise HTTPException(status_code=503, detail="Assistant not initialized")
+
+    actions = assistant.get_recent_actions(limit=20)
+    return {"actions": actions}
 
 
 if __name__ == "__main__":
