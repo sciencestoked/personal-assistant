@@ -39,7 +39,8 @@ class PersonalAssistant:
         self.available_integrations = {
             'calendar': context_builder.calendar is not None,
             'notion': context_builder.notion is not None,
-            'email': context_builder.email is not None
+            'email': context_builder.email is not None,
+            'web_search': context_builder.web_search is not None
         }
 
         # Initialize tool registry

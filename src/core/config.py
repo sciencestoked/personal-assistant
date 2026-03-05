@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     email_address: Optional[str] = Field(default=None, env="EMAIL_ADDRESS")
     email_password: Optional[str] = Field(default=None, env="EMAIL_PASSWORD")
 
+    # Web Search Configuration
+    web_search_enabled: bool = Field(default=True, env="WEB_SEARCH_ENABLED")
+    web_search_timeout: int = Field(default=10, env="WEB_SEARCH_TIMEOUT")
+
     # Database
     database_url: str = Field(default="sqlite:///data/assistant.db", env="DATABASE_URL")
 

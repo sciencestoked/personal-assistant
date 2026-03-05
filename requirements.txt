@@ -32,6 +32,10 @@ notion-client>=2.2.1
 imapclient>=3.0.1
 email-validator>=2.1.0
 
+# Web scraping & search
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
 # Utilities
 python-multipart>=0.0.6
 jinja2>=3.1.3

@@ -46,6 +46,11 @@ You can ONLY access data from these integrations:
     else:
         prompt += "\n❌ **Email** - NOT CONFIGURED. You CANNOT access emails."
 
+    if available_integrations.get('web_search'):
+        prompt += "\n✅ **Web Search** - You CAN search the internet, fetch webpage content, get weather, get news"
+    else:
+        prompt += "\n❌ **Web Search** - DISABLED. You CANNOT search the internet or fetch live information."
+
     prompt += """
 
 ### Rule 3: BE HONEST ABOUT LIMITATIONS

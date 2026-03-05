@@ -124,11 +124,25 @@ async def startup_event():
         else:
             print("ℹ️  Email not configured (credentials not set)")
 
+        # Web Search
+        web_search = None
+        if settings.web_search_enabled:
+            try:
+                from ..integrations.web_search import WebSearchIntegration
+                web_search = WebSearchIntegration(timeout=settings.web_search_timeout)
+                print("✅ Web search integration initialized")
+            except Exception as e:
+                print(f"⚠️  Web search integration error: {e}")
+                web_search = None
+        else:
+            print("ℹ️  Web search disabled (WEB_SEARCH_ENABLED=False)")
+
         # Initialize context builder
         context_builder = ContextBuilder(
             calendar=calendar,
             notion=notion,
-            email=email
+            email=email,
+            web_search=web_search
         )
 
         # Initialize LLM

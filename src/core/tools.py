@@ -320,6 +320,105 @@ def create_tool_registry(context_builder) -> ToolRegistry:
             requires_integration="notion"
         ))
 
+    # Web search tools
+    if context_builder.web_search:
+        def search_web_wrapper(query, num_results=5):
+            return context_builder.web_search.search_google(query, num_results)
+
+        def fetch_webpage_wrapper(url):
+            return context_builder.web_search.fetch_webpage(url)
+
+        def search_and_fetch_wrapper(query, num_results=3):
+            return context_builder.web_search.search_and_fetch(query, num_results)
+
+        def get_weather_wrapper(location):
+            return context_builder.web_search.get_weather(location)
+
+        def get_news_wrapper(topic="latest news", num_results=5):
+            return context_builder.web_search.get_news(topic, num_results)
+
+        registry.register(Tool(
+            name="search_web",
+            description="Search the internet using Google to find current information, facts, news, or answers",
+            function=search_web_wrapper,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to return (default: 5, max: 10)"
+                    }
+                },
+                "required": ["query"]
+            },
+            requires_integration="web_search"
+        ))
+
+        registry.register(Tool(
+            name="fetch_webpage",
+            description="Fetch and extract text content from a specific webpage URL",
+            function=fetch_webpage_wrapper,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Full URL of the webpage to fetch"}
+                },
+                "required": ["url"]
+            },
+            requires_integration="web_search"
+        ))
+
+        registry.register(Tool(
+            name="search_and_fetch",
+            description="Search Google and automatically fetch full content from top results (combines search + fetch)",
+            function=search_and_fetch_wrapper,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of results to fetch (default: 3, max: 5)"
+                    }
+                },
+                "required": ["query"]
+            },
+            requires_integration="web_search"
+        ))
+
+        registry.register(Tool(
+            name="get_weather",
+            description="Get current weather information for any location",
+            function=get_weather_wrapper,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City name or location (e.g., 'Tokyo', 'New York')"}
+                },
+                "required": ["location"]
+            },
+            requires_integration="web_search"
+        ))
+
+        registry.register(Tool(
+            name="get_news",
+            description="Get latest news articles about a specific topic",
+            function=get_news_wrapper,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "News topic (default: 'latest news')"},
+                    "num_results": {
+                        "type": "integer",
+                        "description": "Number of news articles (default: 5)"
+                    }
+                },
+                "required": []
+            },
+            requires_integration="web_search"
+        ))
+
     # Email tools
     if context_builder.email:
         registry.register(Tool(

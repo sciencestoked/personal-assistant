@@ -6,6 +6,7 @@ Aggregates data from all sources (Calendar, Notion, Email) to build comprehensiv
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from ..integrations import GoogleCalendarIntegration, NotionIntegration, EmailIntegration
+from ..integrations.web_search import WebSearchIntegration
 from .config import get_settings
 
 
@@ -16,7 +17,8 @@ class ContextBuilder:
         self,
         calendar: Optional[GoogleCalendarIntegration] = None,
         notion: Optional[NotionIntegration] = None,
-        email: Optional[EmailIntegration] = None
+        email: Optional[EmailIntegration] = None,
+        web_search: Optional[WebSearchIntegration] = None
     ):
         """
         Initialize context builder with integrations.
@@ -25,10 +27,12 @@ class ContextBuilder:
             calendar: Google Calendar integration
             notion: Notion integration
             email: Email integration
+            web_search: Web search integration
         """
         self.calendar = calendar
         self.notion = notion
         self.email = email
+        self.web_search = web_search
         self.settings = get_settings()
 
     async def build_daily_context(self, target_date: Optional[datetime] = None) -> Dict[str, Any]:
