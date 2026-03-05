@@ -4,5 +4,11 @@
 # Activate virtual environment
 source venv/bin/activate
 
-# Start the server
-python -m src.cli server --host 0.0.0.0 --port 8000
+# Check for --quiet flag
+if [[ "$*" == *"--quiet"* ]] || [[ "$*" == *"-q"* ]]; then
+    echo "Starting server in quiet mode (HTTP logs disabled, agentic logs enabled)..."
+    python -m src.cli server --host 0.0.0.0 --port 8000 --quiet
+else
+    # Start the server with default settings
+    python -m src.cli server --host 0.0.0.0 --port 8000
+fi

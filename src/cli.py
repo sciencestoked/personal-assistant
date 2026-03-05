@@ -167,18 +167,25 @@ def ask(
 def server(
     host: str = typer.Option("0.0.0.0", help="Server host"),
     port: int = typer.Option(8000, help="Server port"),
-    reload: bool = typer.Option(False, help="Enable auto-reload")
+    reload: bool = typer.Option(False, help="Enable auto-reload"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Disable HTTP access logs (show only agentic logs)")
 ):
     """Start the web server"""
     import uvicorn
     console.print(f"\n[bold green]Starting server on {host}:{port}...[/bold green]\n")
     console.print(f"[dim]Open http://localhost:{port} in your browser[/dim]\n")
 
+    # Configure log level based on quiet flag
+    log_level = "error" if quiet else "info"
+    access_log = not quiet
+
     uvicorn.run(
         "src.api.main:app",
         host=host,
         port=port,
-        reload=reload
+        reload=reload,
+        log_level=log_level,
+        access_log=access_log
     )
 
 

@@ -6,11 +6,13 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import json
 import re
+import time
 from ..llm import LLMFactory, BaseLLM, Message
 from .context_builder import ContextBuilder
 from .config import get_settings
 from .system_prompts import get_base_system_prompt, get_chat_system_prompt, get_action_log_entry
 from .tools import ToolRegistry, create_tool_registry
+from .agentic_logger import get_agentic_logger
 
 
 class IntegrationNotConfiguredError(Exception):
@@ -45,6 +47,9 @@ class PersonalAssistant:
 
         # Initialize tool registry
         self.tools = create_tool_registry(context_builder)
+
+        # Initialize agentic logger
+        self.agentic_logger = get_agentic_logger()
 
     def log_action(self, action: str, status: str, details: str = "") -> None:
         """Log an action for visibility"""
@@ -338,6 +343,10 @@ Provide:
         # Log the action
         self.log_action("answer_question_agentic", "in_progress", f"Question: {question[:100]}")
 
+        # Agentic logging
+        self.agentic_logger.log_question(question)
+        start_time = time.time()
+
         # Add context if requested
         if include_context:
             missing_integrations = []
@@ -372,12 +381,27 @@ Provide:
                 # Generate response
                 # Lower temperature for Ollama to reduce hallucination
                 temp = 0.3 if self.settings.llm_provider == "ollama" else 0.7
+
+                # Log thinking
+                self.agentic_logger.log_thinking(f"Analyzing question (iteration {iteration}/{max_iterations})...")
+
                 response = await self.llm.generate(messages, temperature=temp)
+
+                # Log raw response in verbose mode
+                self.agentic_logger.log_llm_response_raw(response)
 
                 # Check if response contains a tool call
                 tool_call = self._extract_tool_call(response)
 
                 if tool_call:
+                    # Log the tool decision
+                    self.agentic_logger.log_tool_decision(
+                        tool_name=tool_call.get('tool'),
+                        parameters=tool_call.get('parameters', {}),
+                        reasoning=tool_call.get('thought', 'No explicit reasoning provided'),
+                        iteration=iteration
+                    )
+
                     # Log the tool call
                     self.log_action(
                         "tool_decision",
@@ -386,7 +410,31 @@ Provide:
                     )
 
                     # Execute the tool
+                    self.agentic_logger.log_tool_execution_start(tool_call.get('tool'))
+                    tool_start_time = time.time()
+
                     tool_result = await self._execute_tool_call(tool_call)
+
+                    tool_duration_ms = (time.time() - tool_start_time) * 1000
+
+                    # Log execution result
+                    result_preview = None
+                    if tool_result["success"] and tool_result.get("result"):
+                        result_preview = str(tool_result["result"])[:200]
+
+                    self.agentic_logger.log_tool_execution_end(
+                        tool_name=tool_call.get('tool'),
+                        success=tool_result["success"],
+                        duration_ms=tool_duration_ms,
+                        result_preview=result_preview
+                    )
+
+                    self.agentic_logger.log_tool_result(
+                        tool_name=tool_call.get('tool'),
+                        success=tool_result["success"],
+                        result=tool_result.get("result"),
+                        error=tool_result.get("error")
+                    )
 
                     # Add tool result to conversation
                     if tool_result["success"]:
@@ -403,6 +451,10 @@ Provide:
                     # No tool call, this is the final answer
                     self.log_action("answer_question_agentic", "success", "Final response generated")
 
+                    # Log final answer
+                    total_time_ms = (time.time() - start_time) * 1000
+                    self.agentic_logger.log_final_answer(response, iteration, total_time_ms)
+
                     # Update conversation history
                     self.conversation_history.append(self.llm.create_user_message(question))
                     self.conversation_history.append(self.llm.create_assistant_message(response))
@@ -411,10 +463,15 @@ Provide:
 
             except Exception as e:
                 self.log_action("answer_question_agentic", "error", str(e))
+                self.agentic_logger.log_error(str(e), context=f"Iteration {iteration}")
                 raise
 
         # Max iterations reached
         self.log_action("answer_question_agentic", "error", "Max iterations reached")
+        self.agentic_logger.log_error(
+            "Maximum iterations reached",
+            context=f"Used all {max_iterations} tool calls without reaching final answer"
+        )
         return "I've reached the maximum number of tool calls. Please try breaking your request into smaller steps."
 
     async def answer_question(self, question: str, include_context: bool = True) -> str:

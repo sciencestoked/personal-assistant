@@ -76,6 +76,18 @@ async def startup_event():
 
         print("🚀 Initializing Personal Assistant API...")
 
+        # Initialize agentic logger
+        from ..core.agentic_logger import init_agentic_logger
+        logger = init_agentic_logger(
+            enabled=settings.agentic_logging_enabled,
+            verbose=settings.agentic_logging_verbose
+        )
+
+        if settings.agentic_logging_enabled:
+            print(f"✅ Agentic logging enabled (verbose={settings.agentic_logging_verbose})")
+        else:
+            print("ℹ️  Agentic logging disabled")
+
         # Google Calendar
         if os.path.exists(settings.google_credentials_path):
             try:

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     log_file: str = Field(default="data/assistant.log", env="LOG_FILE")
 
+    # Agentic Logging
+    agentic_logging_enabled: bool = Field(default=True, env="AGENTIC_LOGGING_ENABLED")
+    agentic_logging_verbose: bool = Field(default=False, env="AGENTIC_LOGGING_VERBOSE")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
