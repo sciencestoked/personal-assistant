@@ -369,7 +369,9 @@ Provide:
 
             try:
                 # Generate response
-                response = await self.llm.generate(messages, temperature=0.7)
+                # Lower temperature for Ollama to reduce hallucination
+                temp = 0.3 if self.settings.llm_provider == "ollama" else 0.7
+                response = await self.llm.generate(messages, temperature=temp)
 
                 # Check if response contains a tool call
                 tool_call = self._extract_tool_call(response)
