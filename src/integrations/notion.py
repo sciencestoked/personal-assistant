@@ -70,14 +70,11 @@ class NotionIntegration:
             raise ValueError("No database ID provided")
 
         try:
-            query_params = {"page_size": page_size}
+            query_params = {"database_id": db_id, "page_size": page_size}
             if filter_dict:
                 query_params["filter"] = filter_dict
 
-            response = await self.client.databases.query(
-                database_id=db_id,
-                **query_params
-            )
+            response = await self.client.databases.query(**query_params)
             return self._format_database_entries(response.get("results", []))
         except Exception as e:
             print(f"Error querying Notion database: {e}")
@@ -150,6 +147,7 @@ class NotionIntegration:
             )
             return self._format_database_entries(response.get("results", []))
         except Exception as e:
+            # If Notion database is not configured, return empty list
             print(f"Error getting recent updates: {e}")
             return []
 

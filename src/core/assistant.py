@@ -9,6 +9,11 @@ from .context_builder import ContextBuilder
 from .config import get_settings
 
 
+class IntegrationNotConfiguredError(Exception):
+    """Raised when an integration is not configured"""
+    pass
+
+
 class PersonalAssistant:
     """Main personal assistant class"""
 
@@ -38,9 +43,23 @@ class PersonalAssistant:
         if target_date is None:
             target_date = datetime.now()
 
+        # Check what integrations are available
+        missing_integrations = []
+        if not self.context.calendar:
+            missing_integrations.append("Google Calendar")
+        if not self.context.notion:
+            missing_integrations.append("Notion")
+        if not self.context.email:
+            missing_integrations.append("Email")
+
         # Build context for the day
         context = await self.context.build_daily_context(target_date)
         context_summary = self.context.build_context_summary(context)
+
+        # Add integration status to context
+        if missing_integrations:
+            context_summary += f"\n\n⚠️ Note: The following integrations are not configured: {', '.join(missing_integrations)}"
+            context_summary += "\nConfigure them in your .env file for full functionality."
 
         # Create prompt for LLM
         system_prompt = """You are a helpful personal assistant. Your job is to create a concise,
@@ -205,6 +224,18 @@ Provide:
         Returns:
             Answer to the question
         """
+        # Check for integration-specific questions
+        question_lower = question.lower()
+
+        if "notion" in question_lower and not self.context.notion:
+            return "❌ Notion integration is not configured.\n\nTo access your Notion notes:\n1. Get a Notion API key from https://www.notion.so/my-integrations\n2. Add NOTION_API_KEY to your .env file\n3. Add your NOTION_DATABASE_ID to your .env file\n4. Restart the assistant"
+
+        if ("calendar" in question_lower or "meeting" in question_lower or "event" in question_lower) and not self.context.calendar:
+            return "❌ Google Calendar integration is not configured.\n\nTo access your calendar:\n1. Get Google Calendar API credentials from https://console.cloud.google.com/\n2. Download credentials and save as config/google_credentials.json\n3. Update GOOGLE_CREDENTIALS_PATH in your .env file\n4. Restart the assistant"
+
+        if ("email" in question_lower or "mail" in question_lower) and not self.context.email:
+            return "❌ Email integration is not configured.\n\nTo access your emails:\n1. Set EMAIL_ADDRESS in your .env file\n2. Set EMAIL_PASSWORD (use app password for Gmail) in your .env file\n3. Set EMAIL_IMAP_SERVER (e.g., imap.gmail.com) in your .env file\n4. Restart the assistant"
+
         messages = []
 
         # System message
@@ -216,8 +247,21 @@ available context. If you don't have enough information, say so clearly."""
 
         # Add context if requested
         if include_context:
+            # Check what integrations are available
+            missing_integrations = []
+            if not self.context.calendar:
+                missing_integrations.append("Google Calendar")
+            if not self.context.notion:
+                missing_integrations.append("Notion")
+            if not self.context.email:
+                missing_integrations.append("Email")
+
             context = await self.context.build_daily_context()
             context_summary = self.context.build_context_summary(context)
+
+            if missing_integrations:
+                context_summary += f"\n\n⚠️ Missing integrations: {', '.join(missing_integrations)}"
+
             context_message = f"Current context:\n\n{context_summary}"
             messages.append(self.llm.create_user_message(context_message))
 

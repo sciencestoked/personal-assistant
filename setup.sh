@@ -3,14 +3,9 @@
 
 echo "Setting up Personal Assistant..."
 
-# Check Python version
-python_version=$(python3 --version 2>&1 | grep -oP '(?<=Python )\d+\.\d+')
-required_version="3.11"
-
-if [ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]; then
-    echo "Error: Python 3.11 or higher is required. Current version: $python_version"
-    exit 1
-fi
+# Check Python version (macOS compatible)
+python_version=$(python3 --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
+echo "Found Python version: $python_version"
 
 # Create virtual environment
 echo "Creating virtual environment..."

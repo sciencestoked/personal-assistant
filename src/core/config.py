@@ -79,18 +79,24 @@ class Settings(BaseSettings):
                 "base_url": self.ollama_base_url,
             }
         elif provider == "openai":
+            if not self.openai_api_key:
+                raise ValueError("OpenAI API key is not configured. Please set OPENAI_API_KEY in your .env file.")
             return {
                 "provider": provider,
                 "model": self.openai_model,
                 "api_key": self.openai_api_key,
             }
         elif provider == "anthropic":
+            if not self.anthropic_api_key:
+                raise ValueError("Anthropic API key is not configured. Please set ANTHROPIC_API_KEY in your .env file.")
             return {
                 "provider": provider,
                 "model": self.anthropic_model,
                 "api_key": self.anthropic_api_key,
             }
         elif provider == "groq":
+            if not self.groq_api_key:
+                raise ValueError("Groq API key is not configured. Please set GROQ_API_KEY in your .env file.")
             return {
                 "provider": provider,
                 "model": self.groq_model,
