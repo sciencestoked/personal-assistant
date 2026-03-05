@@ -179,6 +179,9 @@ async def root():
     <html>
     <head>
         <title>Personal Assistant</title>
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
         <style>
             :root {
                 --bg-primary: #0d1117;
